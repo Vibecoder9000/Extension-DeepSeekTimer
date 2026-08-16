@@ -1,0 +1,52 @@
+.deepseek-hours-slot {
+    order: 2147483647;
+    display: flex;
+    flex: 0 0 calc(var(--topBarBlockSize) * 0.9);
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    height: var(--topBarBlockSize);
+}
+
+.deepseek-hours-indicator {
+    --deepseek-high-highlight: color-mix(in srgb, #e53935 82%, var(--SmartThemeBlurTintColor));
+    --deepseek-low-highlight: color-mix(in srgb, #2eaf55 82%, var(--SmartThemeBlurTintColor));
+
+    box-sizing: border-box;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: max-content;
+    min-width: calc(var(--topBarBlockSize) * 0.78);
+    height: calc(var(--topBarBlockSize) * 0.48);
+    padding: 0 4px;
+    border: 1px solid color-mix(in srgb, var(--SmartThemeBodyColor) 38%, transparent);
+    border-radius: calc(var(--topBarBlockSize) * 0.24);
+    color: var(--SmartThemeBodyColor);
+    font-size: calc(var(--mainFontSize) * 0.52);
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    text-shadow: 0 1px 1px var(--SmartThemeShadowColor);
+    white-space: nowrap;
+    user-select: none;
+}
+
+.deepseek-hours-indicator[data-state='high'] {
+    background: var(--deepseek-high-highlight);
+}
+
+.deepseek-hours-indicator[data-state='low'] {
+    background: var(--deepseek-low-highlight);
+}
+
+.deepseek-hours-label {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+body.layout-plus-plus .deepseek-hours-slot {
+    width: 100%;
+    height: calc(var(--topBarBlockSize) * 0.55);
+}

@@ -1,0 +1,10 @@
+{
+  "display_name": "DeepSeek High/Low Pricing Notification",
+  "loading_order": 99999,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "Vibecoder9000",
+  "version": "1.0.0"
+}
