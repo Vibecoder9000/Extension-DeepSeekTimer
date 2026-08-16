@@ -1,0 +1,1 @@
+![DeepSeek Timer showing LOW status](icon.png)
