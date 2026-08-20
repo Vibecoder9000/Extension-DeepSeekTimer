@@ -1,4 +1,7 @@
+import { registerSlashCommand } from '../../../slash-commands.js';
+
 const INDICATOR_ID = 'deepseek-hours-indicator';
+const SLASH_COMMAND_NAME = 'DSH';
 const PEAK_WINDOWS_UTC = Object.freeze([
     { start: 1 * 60, end: 4 * 60 },
     { start: 6 * 60, end: 10 * 60 },
@@ -46,8 +49,7 @@ function formatDuration(milliseconds) {
     return `${hours}h ${minutes}m`;
 }
 
-function updateIndicator(indicator) {
-    const now = new Date();
+function updateIndicator(indicator, now = new Date()) {
     const { isLow, nextChange } = getDeepSeekPeriod(now);
     const state = isLow ? 'low' : 'high';
     const nextState = isLow ? 'HIGH' : 'LOW';
@@ -63,6 +65,20 @@ function updateIndicator(indicator) {
     indicator.querySelector('.deepseek-hours-label').textContent = state.toUpperCase();
     indicator.title = description;
     indicator.setAttribute('aria-label', description);
+
+    return nextChange;
+}
+
+function scheduleRefresh(nextChange) {
+    window.clearTimeout(updateTimer);
+
+    // Refresh at the next boundary or within 30 seconds.
+    const millisecondsUntilChange = nextChange.getTime() - Date.now();
+    const delay = Math.min(
+        UPDATE_INTERVAL_MS,
+        Math.max(250, millisecondsUntilChange + 100),
+    );
+    updateTimer = window.setTimeout(refreshIndicator, delay);
 }
 
 function mountIndicator() {
@@ -93,26 +109,90 @@ function mountIndicator() {
         host.appendChild(slot);
     }
 
-    updateIndicator(indicator);
     return true;
 }
 
-function start() {
+function renderIndicatorAt(now) {
     if (!mountIndicator()) {
-        window.setTimeout(start, 250);
+        return null;
+    }
+
+    const indicator = document.getElementById(INDICATOR_ID);
+    if (!indicator) {
+        return null;
+    }
+
+    return updateIndicator(indicator, now);
+}
+
+function refreshIndicator() {
+    const nextChange = renderIndicatorAt(new Date());
+    if (nextChange === null) {
+        updateTimer = window.setTimeout(refreshIndicator, 250);
         return;
     }
 
-    window.clearInterval(updateTimer);
-    updateTimer = window.setInterval(() => {
-        const indicator = document.getElementById(INDICATOR_ID);
-        if (indicator) {
-            updateIndicator(indicator);
-        } else {
-            mountIndicator();
-        }
-    }, UPDATE_INTERVAL_MS);
+    scheduleRefresh(nextChange);
 }
+
+function getCommandTestTime(state) {
+    const now = new Date();
+    const testMinute = state === 'high'
+        ? PEAK_WINDOWS_UTC[0].start + 1
+        : PEAK_WINDOWS_UTC[0].end + 1;
+
+    return new Date(Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate(),
+        0,
+        testMinute,
+    ));
+}
+
+function runDeepSeekHoursCommand(_, value) {
+    const argument = Array.isArray(value) ? value[0] : value;
+    const requestedState = String(argument ?? '').trim().toLowerCase();
+
+    if (requestedState === 'refresh') {
+        refreshIndicator();
+        return '';
+    }
+
+    const state = requestedState === 'high' || requestedState === 'low'
+        ? requestedState
+        : null;
+    if (!state) {
+        return `Usage: /${SLASH_COMMAND_NAME} refresh|high|low`;
+    }
+
+    // Use the same period calculation as the automatic refresh.
+    renderIndicatorAt(getCommandTestTime(state));
+    return '';
+}
+
+function refreshWhenVisible() {
+    if (!document.hidden) {
+        refreshIndicator();
+    }
+}
+
+function start() {
+    window.clearTimeout(updateTimer);
+    refreshIndicator();
+
+    // Refresh when the page becomes active again.
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('focus', refreshIndicator);
+    window.addEventListener('pageshow', refreshIndicator);
+}
+
+registerSlashCommand(
+    SLASH_COMMAND_NAME,
+    runDeepSeekHoursCommand,
+    [],
+    `Usage: /${SLASH_COMMAND_NAME} refresh|high|low`,
+);
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', start, { once: true });
