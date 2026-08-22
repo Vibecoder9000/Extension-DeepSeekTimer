@@ -11,30 +11,58 @@ const UPDATE_INTERVAL_MS = 30_000;
 let updateTimer;
 
 /**
- * Peak windows are 01:00-04:00 and 06:00-10:00 UTC. All other times are low.
- * UTC arithmetic keeps the result identical in every local time zone and across DST.
+ * Peak windows are 01:00-04:00 and 06:00-10:00 UTC on weekdays. Weekends
+ * are low-rate all day. Beijing weekends correspond to Friday 16:00 UTC through
+ * Sunday 16:00 UTC, keeping all calculations in UTC.
  */
 function getDeepSeekPeriod(now = new Date()) {
     const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
-    const isHigh = PEAK_WINDOWS_UTC.some(({ start, end }) => utcMinutes >= start && utcMinutes < end);
+    const isBeijingWeekend = isBeijingWeekendUtc(now);
+    const isHigh = !isBeijingWeekend
+        ? PEAK_WINDOWS_UTC.some(({ start, end }) => utcMinutes >= start && utcMinutes < end)
+        : false;
     const year = now.getUTCFullYear();
     const month = now.getUTCMonth();
     const day = now.getUTCDate();
 
-    let nextChange;
-    if (utcMinutes < PEAK_WINDOWS_UTC[0].start) {
-        nextChange = new Date(Date.UTC(year, month, day, 1, 0));
-    } else if (utcMinutes < PEAK_WINDOWS_UTC[0].end) {
-        nextChange = new Date(Date.UTC(year, month, day, 4, 0));
-    } else if (utcMinutes < PEAK_WINDOWS_UTC[1].start) {
-        nextChange = new Date(Date.UTC(year, month, day, 6, 0));
-    } else if (utcMinutes < PEAK_WINDOWS_UTC[1].end) {
-        nextChange = new Date(Date.UTC(year, month, day, 10, 0));
-    } else {
-        nextChange = new Date(Date.UTC(year, month, day + 1, 1, 0));
+    // Search the next few UTC boundaries for the first actual state change.
+    // This skips weekend boundaries that do not change the displayed state.
+    const boundaryMinutes = PEAK_WINDOWS_UTC.flatMap(({ start, end }) => [start, end]);
+    let nextChange = null;
+    for (let dayOffset = 0; dayOffset <= 4 && !nextChange; dayOffset += 1) {
+        for (const boundaryMinute of boundaryMinutes) {
+            const candidate = new Date(Date.UTC(year, month, day + dayOffset, 0, boundaryMinute));
+            if (candidate <= now) {
+                continue;
+            }
+
+            const candidatePeriod = getDeepSeekPeriodAt(candidate);
+            if (candidatePeriod !== isHigh) {
+                nextChange = candidate;
+                break;
+            }
+        }
     }
 
     return { isLow: !isHigh, nextChange };
+}
+
+function getDeepSeekPeriodAt(now) {
+    const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+    if (isBeijingWeekendUtc(now)) {
+        return false;
+    }
+
+    return PEAK_WINDOWS_UTC.some(({ start, end }) => utcMinutes >= start && utcMinutes < end);
+}
+
+function isBeijingWeekendUtc(now) {
+    const utcDay = now.getUTCDay();
+    const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+
+    return utcDay === 6
+        || (utcDay === 0 && utcMinutes < 16 * 60)
+        || (utcDay === 5 && utcMinutes >= 16 * 60);
 }
 
 function formatDuration(milliseconds) {
@@ -135,21 +163,6 @@ function refreshIndicator() {
     scheduleRefresh(nextChange);
 }
 
-function getCommandTestTime(state) {
-    const now = new Date();
-    const testMinute = state === 'high'
-        ? PEAK_WINDOWS_UTC[0].start + 1
-        : PEAK_WINDOWS_UTC[0].end + 1;
-
-    return new Date(Date.UTC(
-        now.getUTCFullYear(),
-        now.getUTCMonth(),
-        now.getUTCDate(),
-        0,
-        testMinute,
-    ));
-}
-
 function runDeepSeekHoursCommand(_, value) {
     const argument = Array.isArray(value) ? value[0] : value;
     const requestedState = String(argument ?? '').trim().toLowerCase();
@@ -159,16 +172,9 @@ function runDeepSeekHoursCommand(_, value) {
         return '';
     }
 
-    const state = requestedState === 'high' || requestedState === 'low'
-        ? requestedState
-        : null;
-    if (!state) {
-        return `Usage: /${SLASH_COMMAND_NAME} refresh|high|low`;
+    if (requestedState !== 'refresh') {
+        return `Usage: /${SLASH_COMMAND_NAME} refresh`;
     }
-
-    // Use the same period calculation as the automatic refresh.
-    renderIndicatorAt(getCommandTestTime(state));
-    return '';
 }
 
 function refreshWhenVisible() {
@@ -191,7 +197,7 @@ registerSlashCommand(
     SLASH_COMMAND_NAME,
     runDeepSeekHoursCommand,
     [],
-    `Usage: /${SLASH_COMMAND_NAME} refresh|high|low`,
+    `Usage: /${SLASH_COMMAND_NAME} refresh`,
 );
 
 if (document.readyState === 'loading') {
